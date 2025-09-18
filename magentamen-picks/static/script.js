@@ -697,6 +697,28 @@ async function renderPicksTableWithOptions() {
                                 this.style.borderColor = '#e5e7eb';
                             }, 2000);
                         }
+                    } else {
+                        // Clear the pick when value is empty
+                        try {
+                            const response = await fetch('/api/picks', {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ 
+                                    week: week, 
+                                    player: player, 
+                                    category: category 
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                this.style.borderColor = '#ef4444';
+                                setTimeout(() => {
+                                    this.style.borderColor = '#e5e7eb';
+                                }, 2000);
+                            }
+                        } catch (error) {
+                            console.error('Error clearing pick:', error);
+                        }
                     }
                 });
             });
@@ -860,11 +882,30 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Clear all button
-    document.getElementById('clear-all-btn').addEventListener('click', function() {
-        if (confirm('Are you sure you want to clear all picks?')) {
-            document.querySelectorAll('.pick-dropdown').forEach(dropdown => {
-                dropdown.value = '';
-            });
+    document.getElementById('clear-all-btn').addEventListener('click', async function() {
+        if (confirm('Are you sure you want to clear all picks? This will also clear all results and start over entirely.')) {
+            const week = weekSelector.value;
+            
+            try {
+                const response = await fetch('/api/picks/clear-all', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ week: week })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(result.message);
+                    // Refresh the display to show cleared state
+                    renderPicksTableWithOptions();
+                } else {
+                    alert('Error clearing picks: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error clearing picks:', error);
+                alert('Error clearing picks. Please try again.');
+            }
         }
     });
 

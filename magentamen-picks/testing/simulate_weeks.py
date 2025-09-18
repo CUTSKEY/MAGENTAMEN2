@@ -4,6 +4,11 @@ Week Simulation Script for Magentamen Picks
 Simulates realistic game results for weeks 1-4 to test the system
 """
 
+import sys
+import os
+# Add parent directory to Python path so we can import app
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import random
 import json
 from datetime import datetime, timedelta
@@ -62,7 +67,7 @@ def get_team_names_from_game(game):
 
 def simulate_week(week):
     """Simulate all games for a given week"""
-    print(f"\n🏈 Simulating Week {week}")
+    print(f"\nSimulating Week {week}")
     print("=" * 40)
     
     with app.app_context():
@@ -286,7 +291,7 @@ def calculate_pick_outcomes_for_week(week):
 
 def simulate_multiple_weeks(weeks):
     """Simulate multiple weeks"""
-    print(f"🚀 Starting simulation for weeks {weeks}")
+    print(f"Starting simulation for weeks {weeks}")
     print("=" * 50)
     
     for week in weeks:

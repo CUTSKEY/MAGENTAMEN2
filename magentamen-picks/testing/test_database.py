@@ -4,11 +4,16 @@ Database Test Script for Magentamen Picks
 Tests database structure and sample data
 """
 
+import sys
+import os
+# Add parent directory to Python path so we can import app
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from app import app, db, Game, Player, Pick, Result, NFLPlayer, WeekLock, GameResult
 
 def test_database_structure():
     """Test database structure and sample data"""
-    print("🗄️  Testing Database Structure and Sample Data")
+    print("Testing Database Structure and Sample Data")
     print("=" * 50)
     
     with app.app_context():
@@ -110,7 +115,7 @@ def test_database_structure():
 
 def test_sample_data_quality():
     """Test the quality and completeness of sample data"""
-    print("\n🔍 Testing Sample Data Quality")
+    print("\nTesting Sample Data Quality")
     print("=" * 50)
     
     with app.app_context():
@@ -139,4 +144,4 @@ def test_sample_data_quality():
 if __name__ == "__main__":
     test_database_structure()
     test_sample_data_quality()
-    print("\n✅ Database testing completed!")
+    print("\nDatabase testing completed!")

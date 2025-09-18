@@ -199,19 +199,19 @@ def test_leaderboard():
 
 def main():
     """Run all backend tests"""
-    print("🚀 Starting Backend Tests for Magentamen Picks")
+    print("Starting Backend Tests for Magentamen Picks")
     print("=" * 60)
     
     # Check if Flask app is running
-    print("\n🔍 Checking if Flask app is running...")
+    print("\nChecking if Flask app is running...")
     try:
         response = requests.get(f"{BASE_URL}/")
         if response.status_code == 200:
-            print("✅ Flask app is running")
+            print("Flask app is running")
         else:
             print(f"⚠️  Flask app responded with status {response.status_code}")
     except requests.exceptions.ConnectionError:
-        print("❌ Flask app is not running. Please start it with: python app.py")
+        print("Flask app is not running. Please start it with: python app.py")
         return
     
     # Run all tests
@@ -222,7 +222,7 @@ def main():
     test_leaderboard()
     
     print("\n" + "=" * 60)
-    print("🎉 Backend testing completed!")
+    print("Backend testing completed!")
     print("\n💡 Tips:")
     print("   - If game results refresh failed, that's normal (no live games)")
     print("   - Try the 'Refresh Data' button in the UI to test live API integration")

@@ -10,7 +10,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-ODDS_API_KEY = os.getenv('ODD_API_KEY')
+ODDS_API_KEY = os.getenv('ODDS_API_KEY')
 ODDS_API_URL = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/'
 SCORES_API_URL = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/scores/'
 
@@ -462,6 +462,92 @@ def save_pick():
     db.session.commit()
     return jsonify({'success': True})
 
+@app.route('/api/picks', methods=['DELETE'])
+def clear_picks():
+    data = request.get_json()
+    
+    # Handle week format (could be '2025-1' or just '1')
+    week_param = data.get('week')
+    if '-' in str(week_param):
+        week = int(week_param.split('-')[1])
+    else:
+        week = int(week_param)
+    
+    season = 2025
+    player_name = data.get('player')
+    category = data.get('category')
+    
+    if not all([week, player_name, category]):
+        return jsonify({'error': 'Missing required data'}), 400
+    
+    # Get player
+    player = Player.query.filter_by(name=player_name).first()
+    if not player:
+        return jsonify({'error': 'Player not found'}), 404
+    
+    # Find and delete the pick
+    pick = Pick.query.filter_by(
+        week=week, 
+        season=season, 
+        player_id=player.id, 
+        category=category
+    ).first()
+    
+    if pick:
+        # Also delete associated result
+        result = Result.query.filter_by(
+            week=week,
+            season=season,
+            player_id=player.id,
+            category=category
+        ).first()
+        
+        if result:
+            db.session.delete(result)
+        
+        db.session.delete(pick)
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Pick and result cleared'})
+    else:
+        return jsonify({'success': True, 'message': 'No pick found to clear'})
+
+@app.route('/api/picks/clear-all', methods=['DELETE'])
+def clear_all_picks():
+    data = request.get_json()
+    
+    # Handle week format (could be '2025-1' or just '1')
+    week_param = data.get('week')
+    if '-' in str(week_param):
+        week = int(week_param.split('-')[1])
+    else:
+        week = int(week_param)
+    
+    season = 2025
+    
+    if not week:
+        return jsonify({'error': 'Missing week parameter'}), 400
+    
+    # Delete all picks for this week
+    picks = Pick.query.filter_by(week=week, season=season).all()
+    pick_count = len(picks)
+    
+    # Delete all results for this week
+    results = Result.query.filter_by(week=week, season=season).all()
+    result_count = len(results)
+    
+    for pick in picks:
+        db.session.delete(pick)
+    
+    for result in results:
+        db.session.delete(result)
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True, 
+        'message': f'Cleared {pick_count} picks and {result_count} results for Week {week}'
+    })
+
 @app.route('/leaderboard')
 def leaderboard_page():
     return render_template('leaderboard.html')
@@ -753,8 +839,29 @@ def calculate_results():
     # Get games for the week
     games = Game.query.filter_by(week=week, season=season).all()
     
-    # Fetch game results from external API
-    game_results = fetch_game_results(week, season)
+    # First, check if we already have stored game results
+    stored_results = GameResult.query.filter_by(week=week, season=season, final=True).all()
+    
+    if stored_results:
+        # Use stored results instead of fetching from API
+        print(f"Using {len(stored_results)} stored game results for Week {week}")
+        game_results = {}
+        
+        for result in stored_results:
+            game_key = f"{result.away_team} @ {result.home_team}"
+            game_results[game_key] = {
+                "home_score": result.home_score,
+                "away_score": result.away_score,
+                "final": result.final,
+                "spread": result.spread,
+                "total": result.total,
+                "moneyline_winner": result.moneyline_winner,
+                "spread_winner": result.spread_winner,
+                "total_result": result.total_result
+            }
+    else:
+        # Fetch game results from external API
+        game_results = fetch_game_results(week, season)
     
     # Calculate outcomes for each pick
     results_updated = 0
@@ -794,42 +901,56 @@ def calculate_results():
 
 def fetch_game_results(week, season):
     """
-    Fetch live game results from The Odds API scores endpoint
+    Fetch live game results from The Odds API scores endpoint using daysFrom=3
     """
     if not ODDS_API_KEY:
         print("No API key available for fetching game results")
         return {}
     
     try:
-        # Calculate date range for the week
-        week_start = NFL_2025_WEEK1_START + timedelta(days=(week - 1) * 7)
-        week_end = week_start + timedelta(days=7)
-        
-        # Format dates for API
-        start_date = week_start.strftime('%Y-%m-%dT%H:%M:%SZ')
-        end_date = week_end.strftime('%Y-%m-%dT%H:%M:%SZ')
-        
-        # Fetch scores from The Odds API
+        # Use daysFrom=3 to get games from the last 3 days
         scores_url = 'https://api.the-odds-api.com/v4/sports/americanfootball_nfl/scores/'
         params = {
             'apiKey': ODDS_API_KEY,
             'dateFormat': 'iso',
-            'commenceTimeFrom': start_date,
-            'commenceTimeTo': end_date
+            'daysFrom': 3  # Get games from last 3 days
         }
+        
+        print(f"Fetching games from last 3 days...")
         
         response = requests.get(scores_url, params=params)
         response.raise_for_status()
         
         scores_data = response.json()
         
+        print(f"API returned {len(scores_data)} total games")
+        
+        # Get already stored completed games to avoid re-processing
+        stored_games = set()
+        existing_results = GameResult.query.filter_by(final=True).all()
+        for result in existing_results:
+            game_key = f"{result.away_team} @ {result.home_team}"
+            stored_games.add(game_key)
+        
+        print(f"Already have {len(stored_games)} completed games stored")
+        
         # Process the scores data
         game_results = {}
+        completed_games = 0
+        total_games = len(scores_data)
+        
         for game in scores_data:
             if game.get('completed') and game.get('scores'):
                 home_team = game['home_team']
                 away_team = game['away_team']
                 game_key = f"{away_team} @ {home_team}"
+                
+                # Skip if we already have this completed game
+                if game_key in stored_games:
+                    print(f"Skipping already stored game: {game_key}")
+                    continue
+                
+                completed_games += 1
                 
                 # Extract scores
                 home_score = None
@@ -931,7 +1052,11 @@ def fetch_game_results(week, season):
                         "spread_winner": spread_winner,
                         "total_result": total_result
                     }
+                    
+                    print(f"Processed new completed game: {game_key} - {away_score}-{home_score}")
         
+        print(f"Found {completed_games} NEW completed games out of {total_games} total games")
+        print(f"Stored {len(stored_games)} games already in database")
         return game_results
         
     except requests.RequestException as e:
@@ -940,6 +1065,7 @@ def fetch_game_results(week, season):
     except Exception as e:
         print(f"Error processing game results: {e}")
         return {}
+
 
 def store_game_results(week, season, game_results):
     """
@@ -1103,13 +1229,14 @@ def refresh_game_results(week):
     season = 2025
     
     try:
-        # Fetch fresh results from API
+        # Always fetch fresh results from API using daysFrom=3
+        print(f"=== FETCHING FRESH DATA FOR WEEK {week} ===")
         game_results = fetch_game_results(week, season)
         
         if not game_results:
             return jsonify({
                 'success': False,
-                'message': 'No game results found or API error'
+                'message': f'No completed games found for Week {week}. Games may not have been played yet.'
             }), 400
         
         # Store results in database
@@ -1150,7 +1277,7 @@ def refresh_game_results(week):
         
         return jsonify({
             'success': True,
-            'message': f'Refreshed {stored_count} game results and updated {results_updated} pick outcomes for Week {week}',
+            'message': f'Fetched fresh data and updated {results_updated} pick outcomes for Week {week}',
             'games_updated': stored_count,
             'picks_updated': results_updated
         })
